@@ -1,0 +1,85 @@
+---
+title: "Assignment-21"
+author:
+- name: "Aldair Perez Marmolejo"
+email: "alpema@colostate.edu"
+format: html
+execute: 
+  echo: true
+---
+
+```{r}
+library(dataRetrieval)
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(tidyr)
+library(tibble)
+library(tsibble)
+library(ggplot2)
+library(plotly)
+library(feasts)
+library(fabletools)
+library(zoo)
+```
+
+```{r}
+poudre_flow <- readNWISdv(siteNumber = "06752260",
+                          parameterCd = "00060",
+                          startDate = "2013-01-01",
+                          endDate = "2023-12-31") |>
+  renameNWISColumns() |>
+  mutate(Date = floor_date(Date, "month")) |>
+  group_by(Date) |>
+  summarise(Flow = mean(Flow))  
+```
+
+```{r}
+poudre_flow_tsibble <- poudre_flow |>
+  as_tsibble(index = Date)
+```
+
+```{r}
+p_river_plot <- ggplot(poudre_flow_tsibble, aes(x = Date, y = Flow)) +
+  geom_line(color = "red") +
+  labs(title = "Monthly Flow Time Series", x = "Date", y = "Flow (cfs)") +
+  theme_minimal()
+print(p_river_plot)
+```
+```{r}
+animated_plot <- ggplotly(p_river_plot, dynamicTicks = TRUE)
+animated_plot
+```
+
+```{r}
+poudre_flow_tsibble <- poudre_flow |>
+  as_tsibble(index = Date) |>
+  fill_gaps()
+
+gg_subseries(poudre_flow_tsibble, Flow, na.rm = TRUE) +
+  labs(title = "Subseries of Monthly Flow in Poudre River",
+       y = "Flow (cfs)")
+```
+
+## The seasons are defined according to the date (certain months/dates go to their respective seasons). Subseries represents group a particular series, like a dataset, into specific groups by category, such as season.
+
+```{r}
+full_date_seq <- seq.Date(from = as.Date("2013-01-01"), to = as.Date("2023-12-31"), by = "month")
+
+poudre_flow_tsibble <- poudre_flow |>
+  as_tsibble(index = Date) |>
+  right_join(tibble(Date = full_date_seq), by = "Date") |>
+  fill_gaps(.full = TRUE) |>
+  mutate(Flow = zoo::na.approx(Flow, na.rm = FALSE))
+
+decomposed <- poudre_flow_tsibble |>
+  model(STL = STL(Flow ~ season(window = 12) + trend(window = 13)))
+
+decomposed |>
+  components() |>
+  autoplot() +
+  labs(title = "STL Decomposition of Monthly Flow in Poudre River")
+```
+
+## I see 5 graphs for flow, trend, season_year, season_week, and remainder. There are several flucuations in the data, mostly in 2014-2016 as well as 2021 - 2023. While Trend represents the general movement of water flow, the seasons represent the 12-month representation of how much water flows in each month/week.
+
